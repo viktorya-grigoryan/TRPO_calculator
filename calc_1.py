@@ -97,20 +97,13 @@ class Parser:
         return node
 
     def _parse_term(self) -> ASTNode:
-        node = self._parse_factor()
-        while self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value in '*/%':
+        node = self._parse_power()
+        while self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value in '*/':
             op = self._current_token.value
             self._advance()
-            node = BinOp(node, op, self._parse_factor())
+            node = BinOp(node, op, self._parse_power())
         return node
 
-    def _parse_factor(self) -> ASTNode:
-        node = self._parse_power()
-        while self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value == '^':
-            op = self._current_token.value
-            self._advance()
-            node = BinOp(node, op, self._parse_factor())
-        return node
 
     def _parse_power(self) -> ASTNode:
         if self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value == '-':
