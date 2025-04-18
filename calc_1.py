@@ -10,9 +10,10 @@ sys.setrecursionlimit(10000)
 class TokenType(Enum):
     NUMBER = auto()
     OPERATOR = auto()
+    FUNCTION = auto()
+    CONSTANT = auto()
     LPAREN = auto()
     RPAREN = auto()
-
 
 @dataclass
 class Token:
@@ -37,6 +38,10 @@ class UnaryOp(ASTNode):
     op: str
     operand: ASTNode
 
+@dataclass
+class FunctionCall(ASTNode):
+    func: str
+    arg: ASTNode
 
 class CalculatorError(Exception):
     pass
@@ -52,12 +57,15 @@ class Parser:
         self._tokens = []
         self._pos = 0
         self._current_token = None
-  
+        self._functions = {'sin', 'cos', 'tg', 'ctg', 'ln', 'exp', 'sqrt'}
+        self._constants = {'pi': math.pi, 'e': math.e}
 
     def tokenize(self, expression: str) -> list[Token]:
         token_spec = [
             ('NUMBER', r'\d+(\.\d*)?([eE][+-]?\d+)?'),
-            ('OPERATOR', r'[+\-*/^]'),
+            ('OPERATOR', r'[+\-*/%^]'),
+            ('FUNCTION', r'sin|cos|tg|ctg|ln|exp|sqrt'),
+            ('CONSTANT', r'pi|e'),
             ('LPAREN', r'\('),
             ('RPAREN', r'\)'),
             ('SKIP', r'[ \t\n]'),
@@ -74,6 +82,10 @@ class Parser:
                 tokens.append(Token(TokenType.NUMBER, float(value)))
             elif kind == 'OPERATOR':
                 tokens.append(Token(TokenType.OPERATOR, value))
+            elif kind == 'FUNCTION':
+                tokens.append(Token(TokenType.FUNCTION, value))
+            elif kind == 'CONSTANT':
+                tokens.append(Token(TokenType.CONSTANT, value))
             elif kind == 'LPAREN':
                 tokens.append(Token(TokenType.LPAREN, value))
             elif kind == 'RPAREN':
@@ -105,12 +117,12 @@ class Parser:
 
     def _parse_term(self) -> ASTNode:
         node = self._parse_factor()
-        while self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value in '*/':
+        while self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value in '*/%':
             op = self._current_token.value
             self._advance()
-            node = BinOp(node, op, self._parse_power())
+            node = BinOp(node, op, self._parse_factor())
         return node
-    
+
     def _parse_factor(self) -> ASTNode:
         node = self._parse_power()
         while self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value == '^':
@@ -118,7 +130,6 @@ class Parser:
             self._advance()
             node = BinOp(node, op, self._parse_factor())
         return node
-
 
     def _parse_power(self) -> ASTNode:
         if self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value == '-':
@@ -134,13 +145,24 @@ class Parser:
         if token.type == TokenType.NUMBER:
             self._advance()
             return Number(token.value)
-        
+            
+        elif token.type == TokenType.CONSTANT:
+            self._advance()
+            return Number(self._constants[token.value])
+            
+        elif token.type == TokenType.FUNCTION:
+            func = token.value
+            self._advance()
+            self._expect(TokenType.LPAREN, "Expected '(' after function name")
+            arg = self._parse_expression()
+            self._expect(TokenType.RPAREN, "Expected ')' after function argument")
+            return FunctionCall(func, arg)
+            
         elif token.type == TokenType.LPAREN:
             self._advance()
             expr = self._parse_expression()
             self._expect(TokenType.RPAREN, "Expected ')' after expression")
             return expr
-
             
         raise ParserError(f"Expected number, function or parenthesis, got {token.value}")
 
@@ -150,7 +172,11 @@ class Parser:
         self._advance()
 
 class Evaluator:
-    
+    def __init__(self, angle_unit='radian'):
+        self.angle_unit = angle_unit.lower()
+        if self.angle_unit not in ['radian', 'degree']:
+            raise ValueError("angle_unit must be either 'radian' or 'degree'")
+
     def evaluate(self, node: ASTNode) -> float:
         if isinstance(node, Number):
             return node.value
@@ -179,13 +205,47 @@ class Evaluator:
             operand = self.evaluate(node.operand)
             return -operand if node.op == '-' else operand
             
-        
+        elif isinstance(node, FunctionCall):
+            arg = self.evaluate(node.arg)
+            
+            if node.func == 'sin':
+                x = math.radians(arg) if self.angle_unit == 'degree' else arg
+                return math.sin(x)
+            elif node.func == 'cos':
+                x = math.radians(arg) if self.angle_unit == 'degree' else arg
+                return math.cos(x)
+            elif node.func == 'tg':
+                x = math.radians(arg) if self.angle_unit == 'degree' else arg
+                return math.tan(x)
+            elif node.func == 'ctg':
+                x = math.radians(arg) if self.angle_unit == 'degree' else arg
+                tan = math.tan(x)
+                if tan == 0:
+                    raise EvaluationError("Cotangent is undefined")
+                return 1 / tan
+            elif node.func == 'ln':
+                if arg <= 0:
+                    raise EvaluationError("Logarithm is only defined for positive numbers")
+                return math.log(arg)
+            elif node.func == 'exp':
+                try:
+                    result = math.exp(arg)
+                    if result == float('inf'):
+                        raise EvaluationError("Numerical overflow")
+                    return result
+                except OverflowError:
+                    raise EvaluationError("Numerical overflow")
+            elif node.func == 'sqrt':
+                if arg < 0:
+                    raise EvaluationError("Square root is only defined for non-negative numbers")
+                return math.sqrt(arg)
+                
         raise EvaluationError(f"Unknown node type: {type(node)}")
 
 class Calculator:
-    def __init__(self):
+    def __init__(self, angle_unit='radian'):
         self.parser = Parser()
-        self.evaluator = Evaluator()
+        self.evaluator = Evaluator(angle_unit)
     
     def calculate(self, expression: str) -> float:
         try:
@@ -196,11 +256,11 @@ class Calculator:
         except Exception as e:
             raise CalculatorError(f"Unexpected error: {str(e)}") from e
 
-def interactive_mode():
-
+def interactive_mode(angle_unit='radian'):
+    print(f"Калькулятор (углы в {'градусах' if angle_unit == 'degree' else 'радианах'})")
     print("Для выхода введите 'exit' или 'quit'")
     
-    calc = Calculator()
+    calc = Calculator(angle_unit=angle_unit)
     
     while True:
         try:
@@ -224,15 +284,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Калькулятор математических выражений')
     parser.add_argument('expression', nargs='?', help='Выражение для вычисления')
     parser.add_argument('-i', '--interactive', action='store_true', help='Интерактивный режим')
-   
+    parser.add_argument('--degree', action='store_true', help='Использовать градусы вместо радиан')
     
     args = parser.parse_args()
     
-
-    calc = Calculator()
+    angle_unit = 'degree' if args.degree else 'radian'
+    calc = Calculator(angle_unit=angle_unit)
     
     if args.interactive:
-        interactive_mode()
+        interactive_mode(angle_unit)
     elif args.expression:
         try:
             result = calc.calculate(args.expression)
