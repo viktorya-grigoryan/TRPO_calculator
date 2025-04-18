@@ -10,6 +10,8 @@ sys.setrecursionlimit(10000)
 class TokenType(Enum):
     NUMBER = auto()
     OPERATOR = auto()
+    LPAREN = auto()
+    RPAREN = auto()
 
 
 @dataclass
@@ -55,8 +57,9 @@ class Parser:
     def tokenize(self, expression: str) -> list[Token]:
         token_spec = [
             ('NUMBER', r'\d+(\.\d*)?([eE][+-]?\d+)?'),
-            ('OPERATOR', r'[+\-*/]'),
-    
+            ('OPERATOR', r'[+\-*/^]'),
+            ('LPAREN', r'\('),
+            ('RPAREN', r'\)'),
             ('SKIP', r'[ \t\n]'),
             ('MISMATCH', r'.'),
         ]
@@ -71,6 +74,10 @@ class Parser:
                 tokens.append(Token(TokenType.NUMBER, float(value)))
             elif kind == 'OPERATOR':
                 tokens.append(Token(TokenType.OPERATOR, value))
+            elif kind == 'LPAREN':
+                tokens.append(Token(TokenType.LPAREN, value))
+            elif kind == 'RPAREN':
+                tokens.append(Token(TokenType.RPAREN, value))
             elif kind == 'SKIP':
                 continue
             elif kind == 'MISMATCH':
@@ -97,11 +104,19 @@ class Parser:
         return node
 
     def _parse_term(self) -> ASTNode:
-        node = self._parse_power()
+        node = self._parse_factor()
         while self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value in '*/':
             op = self._current_token.value
             self._advance()
             node = BinOp(node, op, self._parse_power())
+        return node
+    
+    def _parse_factor(self) -> ASTNode:
+        node = self._parse_power()
+        while self._current_token and self._current_token.type == TokenType.OPERATOR and self._current_token.value == '^':
+            op = self._current_token.value
+            self._advance()
+            node = BinOp(node, op, self._parse_factor())
         return node
 
 
@@ -119,6 +134,12 @@ class Parser:
         if token.type == TokenType.NUMBER:
             self._advance()
             return Number(token.value)
+        
+        elif token.type == TokenType.LPAREN:
+            self._advance()
+            expr = self._parse_expression()
+            self._expect(TokenType.RPAREN, "Expected ')' after expression")
+            return expr
 
             
         raise ParserError(f"Expected number, function or parenthesis, got {token.value}")
@@ -145,7 +166,14 @@ class Evaluator:
                 if right == 0:
                     raise EvaluationError("Division by zero")
                 return left / right
-            
+            elif node.op == '^':
+                try:
+                    result = left ** right
+                    if abs(result) == float('inf'):
+                        raise EvaluationError("Numerical overflow")
+                    return result
+                except OverflowError:
+                    raise EvaluationError("Numerical overflow")
                     
         elif isinstance(node, UnaryOp):
             operand = self.evaluate(node.operand)
