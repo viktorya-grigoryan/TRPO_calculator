@@ -33,6 +33,8 @@ class TestCalculator(unittest.TestCase):
         self.assertAlmostEqual(self.calc.calculate("exp(0)"), 1)
         self.assertAlmostEqual(self.calc.calculate("sin(pi/2)"), 1)
         self.assertAlmostEqual(self.calc_deg.calculate("sin(90)"), 1)
+        self.assertAlmostEqual(self.calc_deg.calculate("arctan(1)"), 45)
+
 
     def test_constants(self):
         self.assertAlmostEqual(self.calc.calculate("pi"), math.pi)
@@ -41,6 +43,10 @@ class TestCalculator(unittest.TestCase):
     def test_errors(self):
         with self.assertRaises(EvaluationError):
             self.calc.calculate("1/0")
+        with self.assertRaises(EvaluationError):
+            self.calc.calculate("2^100000")
+        with self.assertRaises(EvaluationError):
+            self.calc.calculate("exp(100000)")
         with self.assertRaises(EvaluationError):
             self.calc.calculate("ln(-1)")
         with self.assertRaises(EvaluationError):
