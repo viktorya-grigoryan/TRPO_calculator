@@ -57,14 +57,14 @@ class Parser:
         self._tokens = []
         self._pos = 0
         self._current_token = None
-        self._functions = {'sin', 'cos', 'tg', 'ctg', 'ln', 'exp', 'sqrt'}
+        self._functions = {'sin', 'cos', 'tg', 'ctg', 'ln', 'exp', 'sqrt', 'arctan'}
         self._constants = {'pi': math.pi, 'e': math.e}
 
     def tokenize(self, expression: str) -> list[Token]:
         token_spec = [
             ('NUMBER', r'\d+(\.\d*)?([eE][+-]?\d+)?'),
             ('OPERATOR', r'[+\-*/%^]'),
-            ('FUNCTION', r'sin|cos|tg|ctg|ln|exp|sqrt'),
+            ('FUNCTION', r'sin|cos|tg|ctg|ln|exp|sqrt|arctan'),
             ('CONSTANT', r'pi|e'),
             ('LPAREN', r'\('),
             ('RPAREN', r'\)'),
@@ -223,6 +223,11 @@ class Evaluator:
                 if tan == 0:
                     raise EvaluationError("Cotangent is undefined")
                 return 1 / tan
+            elif node.func =='arctan':
+                arctan = math.atan(arg)
+                res = arctan*180/math.pi if self.angle_unit == 'degree' else arctan
+                return res
+
             elif node.func == 'ln':
                 if arg <= 0:
                     raise EvaluationError("Logarithm is only defined for positive numbers")
